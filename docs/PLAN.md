@@ -1,7 +1,7 @@
-# Journaling Bot — Implementation Plan
+# Journaling Bot — Implementation Plan (v2)
 
-Companion to [SPEC.md](./SPEC.md). Each milestone ends in something runnable
-and testable, so problems surface early instead of at the end.
+Companion to [SPEC.md](./SPEC.md). Each milestone ends in something runnable and
+testable, so problems surface early instead of at the end.
 
 ## Proposed layout
 
@@ -9,90 +9,151 @@ and testable, so problems surface early instead of at the end.
 journalingbot/
 ├── pyproject.toml
 ├── Dockerfile
-├── .env.example            # variable names only, never real secrets
-├── .gitignore              # .env, *.db, __pycache__
-├── README.md               # setup, privacy notes, manual smoke checklist
+├── .env.example            # variable NAMES only, never real secrets
+├── .gitignore              # .env, *.db, data/, backups/, __pycache__
+├── README.md               # setup, privacy notes, smoke checklist
 ├── docs/{SPEC,PLAN}.md
 ├── src/journalbot/
-│   ├── config.py           # env loading + validation (fail fast on missing vars)
-│   ├── db.py               # schema + migrations + Store
-│   ├── models.py           # dataclasses: Entry, Summary, User
-│   ├── summarizer.py       # Summarizer interface + Anthropic implementation
-│   ├── formatting.py       # summary -> Telegram HTML, escaping, splitting
-│   ├── timeutil.py         # local_date, prompt-due logic, DST-safe
-│   ├── methods/
-│   │   └── nightly.py      # NightlyReflection method (prompt text + schema)
-│   ├── handlers.py         # commands, messages, button callbacks
+│   ├── config.py           # env loading + validation (fail fast)
+│   ├── db.py               # schema, migrations, Store
+│   ├── models.py
+│   ├── timeutil.py         # local_date, due-checks, week/month boundaries
+│   ├── transcriber.py      # Transcriber interface: OpenAI + local
+│   ├── summarizer.py       # daily summary (schema-validated, tone-mirroring)
+│   ├── stats.py            # streaks, counts, repeated-mistake detection (pure code)
+│   ├── recaps.py           # weekly + monthly generation, rotating formats
+│   ├── formatting.py       # Telegram HTML, escaping, splitting
+│   ├── exporter.py         # Markdown/JSON/CSV folder + zip
+│   ├── methods/nightly.py  # NightlyReflection
+│   ├── handlers.py         # commands, text, voice, buttons
 │   ├── scheduler.py        # the per-minute tick
-│   └── main.py             # wiring + run_polling
+│   └── main.py
 └── tests/
 ```
 
 ## Milestones
 
-### M0 — Scaffold and BotFather setup
-- Create `pyproject.toml`, `.gitignore`, `.env.example`, config loader.
-- User creates the bot with @BotFather and gets their numeric Telegram ID
-  (e.g. from @userinfobot) for `ALLOWED_USER_IDS`.
-- **Done when:** `python -m journalbot` starts, and fails with a clear message
-  if a required variable is missing.
-- *Why first:* a config loader that fails fast prevents confusing errors later.
+### M0 — Scaffold
+`pyproject.toml`, `.gitignore`, `.env.example`, config loader.
+**Done when:** the app starts, and exits with a clear message naming any
+missing variable.
+*Why first:* fail-fast config prevents confusing errors in every later step.
 
-### M1 — Storage and time logic (no Telegram yet)
-- Implement schema, `Store`, and `timeutil` (local date, "is prompt due").
-- **Done when:** unit tests pass for one-entry-per-day, cascade delete, and
-  midnight/DST boundaries.
-- *Why before the bot:* the date logic is the most bug-prone part. Pure
-  functions are far easier to test without Telegram in the way.
+### M1 — Storage and time logic (no Telegram)
+Schema + migrations + `Store`; `timeutil` (local date, due checks, week and
+month boundaries in Asia/Jakarta).
+**Done when:** tests pass for one-entry-per-day, cascade delete, stale-marking,
+and midnight boundaries.
+*Why before the bot:* date logic is the most bug-prone part, and pure functions
+are easy to test without Telegram.
 
-### M2 — Summarizer and formatter
-- Implement `Summarizer` with schema-validated output, retry-once, and the
-  failure path; implement `formatting.py`.
-- **Done when:** tests pass with a fake client (good / malformed / error),
-  and a manual script summarizes a sample journal paragraph with the real API.
-- *Why isolated:* summary quality is the product's core value. Iterating on the
-  prompt with a script is far faster than doing it through Telegram.
+### M2 — Daily summarizer + formatter (tone-mirroring)
+Schema-validated output, order Grateful → Mistakes → Learned, style samples,
+retry-once/failure path.
+**Done when:** fake-client tests pass, and a manual script summarizes sample
+Indonesian, English, and mixed journals with no invented content.
+*Why isolated:* summary quality is the core of the product; iterating on the
+prompt via a script is far faster than via Telegram.
 
-### M3 — Bot conversation loop
-- Allowlist guard, `/start`, message collection, Done/Skip buttons, `/done`,
-  summary reply, session state persisted in SQLite.
-- **Done when:** a manual end-to-end run works (prompt via `/now` → messages →
-  Done → summary), and acceptance criteria 2, 3, 7 hold.
+### M3 — Bot loop with text
+Allowlist guard, `/start`, collection, Done/Skip, `/done`, `/undo`, `/fix`,
+state persisted in SQLite.
+**Done when:** `/now` → messages → Done → summary works (criteria 2, 4, 10).
 
-### M4 — Scheduling
-- Per-minute tick: send nightly prompt, auto-finalize at 60 min idle, expire at
-  2 h, retry failed summaries. `/time`, `/timezone`, `/pause`, `/resume`.
-- **Done when:** tests with a fake clock cover prompt/finalize/expire and
-  restart-mid-session (criterion 4).
+### M4 — Voice notes
+`Transcriber` interface + OpenAI implementation (+ `local` option), download →
+transcribe → delete audio, show transcript, duration limit, failure messages.
+**Done when:** a real voice note becomes a stored transcript and joins the
+summary (criteria 2, 3, 5).
 
-### M5 — Review and data-control commands
-- `/today`, `/history`, `/retry`, `/delete` (with confirm), `/export`.
-- **Done when:** criteria 5 and 6 hold.
+### M5 — Scheduling
+Per-minute tick: 20:00 prompt, auto-finalize, expiry, retries, `/time`,
+`/timezone`, `/pause`, `/resume`.
+**Done when:** fake-clock tests cover prompt/finalize/expire and restart
+mid-session (criteria 1, 4).
 
-### M6 — Hardening and deploy
-- Dockerfile, README (privacy notes, hosting, smoke checklist), log audit for
-  criterion 8, DB backup note (copy the one `.db` file).
-- **Done when:** the bot runs in a container with a mounted volume, survives a
-  restart, and all acceptance criteria in SPEC §13 are checked off.
+### M6 — Export and backups
+`exporter.py` (folder layout, front-matter, JSON, CSV, zip), `/export`, nightly
+DB backup with 14-copy rotation, `/history`, `/today`, `/delete`.
+**Done when:** golden-file export tests pass; criteria 6, 9.
+
+### M7 — Weekly Wrapped
+`stats.py` (computed numbers), weekly generation with rotating formats, mini
+recap for sparse weeks, Monday 08:00 delivery, `/week`.
+**Done when:** stats unit-tested (streaks, counts); a sample week renders in
+each format; criterion 7.
+*Why stats before prose:* numbers computed in code can't be hallucinated.
+
+### M8 — Monthly Review
+Repeated-mistake detection (≥ 2 distinct days), progress vs. last month,
+growth experiments, 1st-of-month delivery, `/month`.
+**Done when:** tests cover the ≥ 2 rule and sparse-month handling; criterion 8.
+
+### M9 — Hardening and deploy
+Dockerfile, README (privacy, hosting, smoke checklist), log audit, final pass
+over every acceptance criterion in SPEC §16.
+**Done when:** runs in a container with a mounted volume, survives restart, and
+all criteria are checked off.
 
 ## Risks and mitigations
 
 | Risk | Mitigation |
 |---|---|
-| Timezone/date bugs misfile entries | Explicit `local_date`, pure functions, boundary tests (M1) |
-| LLM invents content | Strict system prompt + empty-section rule + schema; spot-check with sample journals (M2) |
-| LLM outage loses data | Raw messages saved before any API call; `/retry` (M2/M5) |
-| Bot token or API key leaks | Env vars only, `.env` git-ignored, `.env.example` has names only |
-| Bot restarts mid-entry | All session state in SQLite, not memory (M1/M3) |
-| Telegram message limits / bad HTML | Escape all text, split at 4096 chars (M2) |
+| Wrong transcript becomes wrong journal | Show transcript; `/fix` and `/undo` |
+| Model invents content or wrong tone | Strict prompts, empty-section rule, sample-journal checks (M2) |
+| Model miscounts in recaps | Numbers computed in code (M7) |
+| Recap goes stale after edits/deletes | `status = stale` + `/week redo`, `/month redo` |
+| Transcription/LLM outage | Raw saved first; `/retry`; auto-retry on tick |
+| Leaked keys | Env vars only; `.env` git-ignored; revoke instructions below |
+| Timezone/date bugs | Explicit `local_date`, boundary tests (M1) |
+| Cost surprises | Haiku for daily, 10-min voice cap, one weekly + one monthly call |
+| One-file DB corruption | Nightly rotated backups (M6) |
 
-## What I need from you before M0
+## Getting your keys (what you asked)
 
-1. A bot token from @BotFather (kept as an env var; **don't paste it in chat or commit it**).
-2. Your numeric Telegram user ID.
-3. An Anthropic API key.
-4. Your timezone (e.g. `Asia/Jakarta`) and preferred nightly time.
-5. Confirmation, or changes, on the defaults in SPEC §14.
+You need **four** things. **Never paste any of them into this chat**, and never
+commit them to git.
 
-I can build M0–M3 without real credentials (using fakes in tests); the real
-keys are only needed for the manual end-to-end checks.
+### 1. Telegram bot token (from BotFather)
+1. In Telegram, search for **@BotFather** (the one with the blue verified tick).
+2. Send `/newbot`.
+3. Give it a display name (e.g. "My Journal"), then a username that ends in
+   `bot` (e.g. `farel_journal_bot`).
+4. BotFather replies with a token like `123456789:AA...`. That's
+   `TELEGRAM_BOT_TOKEN`.
+*If it ever leaks:* send BotFather `/revoke` to invalidate it.
+
+### 2. Your numeric Telegram user ID
+Message **@userinfobot** (or @RawDataBot); it replies with your numeric `Id`.
+That's `ALLOWED_USER_IDS`.
+*Why the number, not your @username:* usernames can be changed or reassigned;
+the numeric ID is permanent and can't be spoofed.
+
+### 3. Anthropic API key
+1. Go to **console.anthropic.com** and sign in.
+2. Add credit under Billing (API usage is billed separately from any Claude.ai
+   subscription; a few dollars lasts a long time at one entry a day).
+3. **API Keys → Create Key**; copy it immediately (it is shown once).
+That's `ANTHROPIC_API_KEY`.
+
+### 4. OpenAI API key (for voice-note transcription)
+Go to **platform.openai.com → API keys → Create new secret key** and add a few
+dollars of credit. That's `OPENAI_API_KEY`.
+*Why a second provider:* Anthropic's API doesn't transcribe audio. If you'd
+rather avoid it, say so and I'll default to the free local transcriber instead
+(needs a host with ~1–2 GB RAM).
+
+### Where to put them
+
+| Where the bot runs | Where the keys go |
+|---|---|
+| **This cloud session (building and testing)** | Cloud environment menu in the session title bar → **Edit** → add them under *Network secrets* / API credentials if shown, otherwise as **environment variables**, using exactly these names: `TELEGRAM_BOT_TOKEN`, `ALLOWED_USER_IDS`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`. A **new session** picks them up. |
+| **Your own laptop** | Copy `.env.example` to `.env` in the project folder and fill in the values. `.env` is git-ignored. |
+| **Production host** (VPS, Fly.io, Railway…) | The host's *Secrets / Environment variables* page, same names. |
+
+*Why environment variables:* the code reads them at startup, so keys never
+appear in source files, git history, or screenshots of the repo.
+
+## What happens next
+I can build M0–M3 and most tests with **no keys at all** (fakes in tests). Keys
+are only needed for the manual end-to-end checks (M2 prompt tuning, M4 voice).
