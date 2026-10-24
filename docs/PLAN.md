@@ -60,7 +60,7 @@ Allowlist guard, `/start`, collection, Done/Skip, `/done`, `/undo`, `/fix`,
 state persisted in SQLite.
 **Done when:** `/now` → messages → Done → summary works (criteria 2, 4, 10).
 
-### M4 — Voice notes
+### M4 — Voice notes (DEFERRED to phase 2; skip for now)
 `Transcriber` interface + OpenAI implementation (+ `local` option), download →
 transcribe → delete audio, show transcript, duration limit, failure messages.
 **Done when:** a real voice note becomes a stored transcript and joins the
@@ -136,7 +136,7 @@ the numeric ID is permanent and can't be spoofed.
 3. **API Keys → Create Key**; copy it immediately (it is shown once).
 That's `ANTHROPIC_API_KEY`.
 
-### 4. OpenAI API key (for voice-note transcription)
+### 4. OpenAI API key — phase 2 only (voice notes), skip for now
 Go to **platform.openai.com → API keys → Create new secret key** and add a few
 dollars of credit. That's `OPENAI_API_KEY`.
 *Why a second provider:* Anthropic's API doesn't transcribe audio. If you'd
@@ -153,6 +153,22 @@ rather avoid it, say so and I'll default to the free local transcriber instead
 
 *Why environment variables:* the code reads them at startup, so keys never
 appear in source files, git history, or screenshots of the repo.
+
+## Developing at zero cost
+
+| Cost item | Free way | Trade-off |
+|---|---|---|
+| Telegram bot | Always free | None |
+| Building and tests | All tests use fake summarizers and a fake clock | None; this covers ~90% of the work |
+| AI summaries (development) | A free-tier provider (`LLM_PROVIDER=gemini`/`groq`/`openrouter`) or a local model via `ollama` | Rate limits; quality in casual Indonesian is lower; free tiers can change or end, so check current terms |
+| Privacy on free tiers | Some free tiers may use your prompts to improve their products | Use fake/sample journals while developing; only put real entries through a provider whose terms you accept |
+| Hosting (development) | Run on your own laptop/PC | Bot only works while that machine is on |
+| Hosting (always on) | An old PC/Raspberry Pi at home, or a provider's free-forever VM tier if one is available to you | Free tiers change and often need a card for sign-up; verify before relying on one |
+| AI summaries (production) | Anthropic Haiku | Not free, but one short entry a day plus a weekly and monthly call should be well under a dollar a month (estimate; check current pricing) |
+
+Recommended path: build with fakes, tune prompts with a free provider on
+sample journals, run on your laptop to try it for real, and only then decide
+whether to pay for a better model or an always-on host.
 
 ## What happens next
 I can build M0–M3 and most tests with **no keys at all** (fakes in tests). Keys

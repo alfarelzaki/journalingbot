@@ -26,14 +26,14 @@ step into "mistakes".
 
 ### In scope (v1)
 - Nightly prompt from 20:00 Asia/Jakarta (configurable).
-- Answers as text and/or voice notes, mixed freely.
+- Answers as text. (Voice notes are deferred to phase 2, see §5.2.)
 - Daily three-section summary in the user's own language and tone.
 - Permanent storage of everything, plus organized export (§9).
 - Weekly recap (§7) and monthly celebration (§8).
 - Commands for settings, skipping, history, deleting, exporting.
 
 ### Out of scope (v1)
-- Photos, videos, other media.
+- Voice notes (phase 2), photos, videos, other media.
 - Multiple users / a public bot. v1 serves one allow-listed person.
 - A web UI.
 
@@ -130,7 +130,12 @@ Rules:
   time" is included **only if the user said it**.
 - Split at section boundaries if longer than Telegram's 4096 characters.
 
-### 5.2 Voice notes
+### 5.2 Voice notes — **DEFERRED to phase 2**
+
+*Why deferred:* it needs a second service (transcription), a second key, and
+extra cost. The text flow is the core, so it ships first. The design below is
+kept so phase 2 doesn't need re-planning, and `source = 'voice'` stays in the
+schema so adding it later needs no data migration.
 
 - Telegram voice notes arrive as OGG/Opus. The bot downloads the file, sends it
   to a **`Transcriber`**, deletes the file, and stores the transcript as a
@@ -176,7 +181,10 @@ Rules:
 
 ## 7. LLM contract (all generated text)
 
-- **Provider:** Anthropic Messages API. **Model:** `SUMMARY_MODEL`, default
+- **Provider:** pluggable behind the `Summarizer` interface via `LLM_PROVIDER`
+  (default Anthropic Messages API; free options in PLAN.md). *Why pluggable:*
+  lets you develop and even run on a free tier, then switch to a paid model by
+  changing one setting. **Model:** `SUMMARY_MODEL`, default
   `claude-haiku-5-5` for daily summaries; `NARRATIVE_MODEL`, default
   `claude-sonnet-5-5` for weekly/monthly.
   *Why two models:* daily extraction is simple and runs every night, so cheap
@@ -375,8 +383,10 @@ structure; CSV opens in Excel/Google Sheets.
 | `TELEGRAM_BOT_TOKEN` | yes | From @BotFather |
 | `ALLOWED_USER_IDS` | yes | Your numeric Telegram ID (comma-separated) |
 | `ANTHROPIC_API_KEY` | yes | Summaries, recaps |
-| `OPENAI_API_KEY` | if `TRANSCRIBER=openai` (default) | Voice transcription |
-| `TRANSCRIBER` | no | `openai` (default) or `local` |
+| `LLM_PROVIDER` | no | `anthropic` (default), `gemini`, `groq`, `openrouter`, or `ollama` |
+| `LLM_API_KEY` | depends | Key for the chosen provider (`ANTHROPIC_API_KEY` is accepted for `anthropic`); not needed for `ollama` |
+| `OPENAI_API_KEY` | phase 2 only | Voice transcription |
+| `TRANSCRIBER` | phase 2 only | `openai` (default) or `local` |
 | `SUMMARY_MODEL` · `NARRATIVE_MODEL` | no | See §7 |
 | `STYLE_SAMPLES` | no | 0–3, default 3 |
 | `DB_PATH` | no | Default `./data/journal.db` |
@@ -438,10 +448,10 @@ system until a second method exists.
 ## 16. Acceptance criteria (v1)
 
 1. Prompt arrives at 20:00 Asia/Jakarta, only to the allow-listed user.
-2. A mix of text + voice notes then **Done** yields a summary in order
+2. Text messages then **Done** yield a summary in order
    Grateful → Mistakes → Learned, in the user's language and tone, with no
    invented content.
-3. Voice transcripts are shown and correctable; audio files are deleted.
+3. *(Phase 2)* Voice transcripts are shown and correctable; audio files are deleted.
 4. Killing the bot mid-entry loses nothing.
 5. LLM or transcription outage never loses an entry; `/retry` recovers.
 6. `/export` produces the folder structure in §10.2; raw text only with `raw`.
