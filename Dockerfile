@@ -7,6 +7,8 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 COPY pyproject.toml ./
 COPY src ./src
+COPY scripts ./scripts
+COPY samples ./samples
 RUN pip install --no-cache-dir .
 
 # Run as an unprivileged user; the journal lives on a mounted volume.

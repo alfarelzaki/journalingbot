@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-PROVIDERS = ("anthropic", "groq", "gemini", "openrouter", "ollama")
+PROVIDERS = ("anthropic", "groq", "gemini", "openrouter", "deepseek", "ollama")
 
 ANTHROPIC_SUMMARY_MODEL = "claude-haiku-5-5"
 ANTHROPIC_NARRATIVE_MODEL = "claude-sonnet-5-5"
@@ -32,6 +32,7 @@ class Config:
     summary_model: str
     narrative_model: str
     style_samples: int
+    backups_kept: int
     db_path: Path
 
 
@@ -114,6 +115,13 @@ def load_config(env: Mapping[str, str] | None = None) -> Config:
     else:
         problems.append("STYLE_SAMPLES must be a whole number from 0 to 3.")
 
+    raw_backups = get("BACKUPS_KEPT") or "14"
+    backups_kept = 14
+    if raw_backups.isdigit() and 1 <= int(raw_backups) <= 3650:
+        backups_kept = int(raw_backups)
+    else:
+        problems.append("BACKUPS_KEPT must be a whole number from 1 to 3650.")
+
     if problems:
         raise ConfigError("Configuration problems:\n" + "\n".join(f"- {p}" for p in problems))
 
@@ -126,5 +134,6 @@ def load_config(env: Mapping[str, str] | None = None) -> Config:
         summary_model=summary_model,
         narrative_model=narrative_model,
         style_samples=style_samples,
+        backups_kept=backups_kept,
         db_path=Path(get("DB_PATH") or "./data/journal.db"),
     )

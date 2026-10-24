@@ -21,6 +21,7 @@ BASE_URLS = {
     "groq": "https://api.groq.com/openai/v1",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
     "openrouter": "https://openrouter.ai/api/v1",
+    "deepseek": "https://api.deepseek.com",
     "ollama": "http://localhost:11434/v1",
 }
 

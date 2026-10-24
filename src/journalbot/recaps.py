@@ -132,7 +132,7 @@ async def generate_weekly(sm: Summarizer, monday: date, days: list[tuple[date, D
         user=f"<summaries>\n{_days_text(days)}\n</summaries>".replace("</", "<​/", 0),
         model=sm.narrative_model,
         validate=lambda obj: validate_weekly(obj, valid, mini),
-        max_tokens=1400,
+        max_tokens=3000,
         retry_delay=sm.retry_delay,
     )
     sunday = monday + timedelta(days=6)
@@ -282,7 +282,7 @@ async def generate_monthly(
         user=user,
         model=sm.narrative_model,
         validate=lambda obj: validate_monthly(obj, valid, sparse),
-        max_tokens=1800,
+        max_tokens=3500,
         retry_delay=sm.retry_delay,
     )
     content["sparse"] = sparse

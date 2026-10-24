@@ -140,6 +140,6 @@ class Summarizer:
             user=build_daily_prompt(texts, style_samples),
             model=self.summary_model,
             validate=lambda obj: validate_daily(obj, self.summary_model),
-            max_tokens=900,
+            max_tokens=2000,
             retry_delay=self.retry_delay,
         )

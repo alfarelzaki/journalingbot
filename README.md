@@ -50,6 +50,7 @@ You need three things (never paste them in chat or commit them):
 |---|---|
 | **Free, for trying it out** (Groq, no card) | `LLM_PROVIDER=groq`, `LLM_API_KEY=<key from console.groq.com>`, `SUMMARY_MODEL=<a current model from their console>` |
 | **Cheap and best tone-matching** (Anthropic Haiku, about a cent a month for one entry a day) | `LLM_PROVIDER=anthropic`, `LLM_API_KEY=<key from console.anthropic.com>` (models default to `claude-haiku-5-5` / `claude-sonnet-5-5`; set `NARRATIVE_MODEL=claude-haiku-5-5` to keep recaps cheap) |
+| **Very cheap** (DeepSeek Flash) | `LLM_PROVIDER=deepseek`, `LLM_API_KEY=<key from platform.deepseek.com>`, `SUMMARY_MODEL=<Flash model name shown in their live docs>`. Your text goes to DeepSeek; read their privacy policy first. |
 | **Free and fully private** | `LLM_PROVIDER=ollama`, `SUMMARY_MODEL=<a model you pulled>`; no key. Small local models are weaker at casual Indonesian and more likely to invent details. |
 | Others | `gemini`, `openrouter` (set `SUMMARY_MODEL`). Prices, limits and data policies change; check them. |
 
@@ -70,6 +71,11 @@ Then open your bot in Telegram and send `/start`.
 *Keep it running:* the 20:00 prompt only arrives while the program is running
 and online. If you miss the window (3 hours) the prompt is skipped for that
 night; recaps catch up later.
+
+### Step-by-step server setup
+
+For a full walkthrough with DeepSeek Flash on a Hostinger VPS, including
+security, testing and updates, see [`docs/DEPLOY_HOSTINGER.md`](docs/DEPLOY_HOSTINGER.md).
 
 ### Run it in Docker
 
@@ -125,7 +131,10 @@ How it behaves, and why:
 ## Your data
 
 - Everything lives in `journal.db` (`./data/` locally, `/data` in Docker).
-- A daily copy goes to `backups/` (the last 14 are kept). Copy that folder
+- A daily copy of the database goes to `backups/`. The newest 14 are kept by
+  default; set `BACKUPS_KEPT=30` (any number from 1 to 3650) in `.env` to keep
+  more. This only limits backup *snapshots*: your summaries themselves are
+  never deleted automatically. Copy that folder
   somewhere safe: a single file on a single machine is a single point of failure.
 - `/export` builds:
   ```

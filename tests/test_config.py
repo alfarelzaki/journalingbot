@@ -66,3 +66,21 @@ def test_dotenv_missing_file_is_fine(tmp_path):
     env = {}
     load_dotenv(tmp_path / "nope", env)
     assert env == {}
+
+
+def test_backups_kept_default_custom_and_invalid():
+    ok = {**BASE, "LLM_API_KEY": "k"}
+    assert load_config(ok).backups_kept == 14
+    assert load_config({**ok, "BACKUPS_KEPT": "60"}).backups_kept == 60
+    for bad in ("0", "-3", "many", "99999"):
+        with pytest.raises(ConfigError, match="BACKUPS_KEPT"):
+            load_config({**ok, "BACKUPS_KEPT": bad})
+
+
+def test_deepseek_provider_needs_key_and_model():
+    env = {**BASE, "LLM_PROVIDER": "deepseek"}
+    with pytest.raises(ConfigError) as exc:
+        load_config(env)
+    assert "LLM_API_KEY" in str(exc.value) and "SUMMARY_MODEL" in str(exc.value)
+    cfg = load_config({**env, "LLM_API_KEY": "k", "SUMMARY_MODEL": "deepseek-flash"})
+    assert cfg.narrative_model == "deepseek-flash"

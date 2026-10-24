@@ -397,3 +397,15 @@ async def test_csv_formula_injection_is_neutralized():
     from journalbot.exporter import _csv_safe
     assert _csv_safe("=HYPERLINK(1)") == "'=HYPERLINK(1)"
     assert _csv_safe("normal") == "normal"
+
+
+async def test_backup_count_is_configurable(tmp_path):
+    store = Store(":memory:")
+    svc = JournalService(
+        store, Summarizer(FakeLLM(), "s", "b", retry_delay=0), FakeMessenger(),
+        backup_dir=tmp_path, backups_kept=3, clock=Clock(),
+    )
+    store.ensure_user(UID, EVENING)
+    for i in range(6):
+        await svc.tick(EVENING + timedelta(days=i))
+    assert len(list(tmp_path.glob("journal-*.db"))) == 3

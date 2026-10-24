@@ -17,6 +17,7 @@ PROVIDER_NAMES = {
     "groq": "Groq",
     "gemini": "Google Gemini",
     "openrouter": "OpenRouter",
+    "deepseek": "DeepSeek",
     "ollama": "your local Ollama server",
 }
 
@@ -51,6 +52,7 @@ def main() -> int:
             style_samples=config.style_samples,
             provider_name=PROVIDER_NAMES.get(config.llm_provider, config.llm_provider),
             backup_dir=backup_dir,
+            backups_kept=config.backups_kept,
         )
 
     app = build_application(config, make_service)

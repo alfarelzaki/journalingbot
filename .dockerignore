@@ -5,6 +5,5 @@ data
 backups
 tests
 docs
-samples
 __pycache__
 *.egg-info

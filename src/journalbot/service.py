@@ -43,7 +43,7 @@ IDLE_FINALIZE = timedelta(minutes=60)  # silence after the last message -> summa
 NO_REPLY_EXPIRY = timedelta(hours=4)  # unanswered prompt -> skipped
 RECAP_TIME = time(8, 0)
 RETRY_EVERY_MINUTES = 30
-BACKUPS_KEPT = 14
+DEFAULT_BACKUPS_KEPT = 14
 
 PROMPTS = {
     "id": "🌙 Check-in malam. Hari ini ngapain aja? Tulis sebebas dan sepanjang yang kamu mau, boleh dikirim beberapa pesan. Tekan Selesai kalau sudah.",
@@ -99,6 +99,7 @@ class JournalService:
         style_samples: int = 3,
         provider_name: str = "an AI provider",
         backup_dir: Path | None = None,
+        backups_kept: int = DEFAULT_BACKUPS_KEPT,
         clock: Callable[[], datetime] = utcnow,
     ):
         self.store = store
@@ -107,6 +108,7 @@ class JournalService:
         self.style_samples = style_samples
         self.provider_name = provider_name
         self.backup_dir = backup_dir
+        self.backups_kept = backups_kept
         self.clock = clock
         self.fmt = HtmlFmt()
         # The scheduler and the user's Done tap can race to summarize the same
@@ -595,5 +597,5 @@ class JournalService:
             return
         self.store.backup_to(self.backup_dir / f"journal-{stamp}.db")
         self.store.kv_set("last_backup", stamp)
-        for old in sorted(self.backup_dir.glob("journal-*.db"))[:-BACKUPS_KEPT]:
+        for old in sorted(self.backup_dir.glob("journal-*.db"))[: -self.backups_kept]:
             old.unlink()
