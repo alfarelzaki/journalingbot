@@ -28,6 +28,7 @@ class Config:
     allowed_user_ids: frozenset[int]
     llm_provider: str
     llm_api_key: str | None
+    llm_base_url: str | None
     summary_model: str
     narrative_model: str
     style_samples: int
@@ -121,6 +122,7 @@ def load_config(env: Mapping[str, str] | None = None) -> Config:
         allowed_user_ids=frozenset(allowed),
         llm_provider=provider,
         llm_api_key=api_key,
+        llm_base_url=get("LLM_BASE_URL") or None,
         summary_model=summary_model,
         narrative_model=narrative_model,
         style_samples=style_samples,
