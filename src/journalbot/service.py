@@ -7,6 +7,7 @@ All session state lives in SQLite, so a restart mid-entry loses nothing.
 
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 from collections.abc import Callable
@@ -108,6 +109,9 @@ class JournalService:
         self.backup_dir = backup_dir
         self.clock = clock
         self.fmt = HtmlFmt()
+        # The scheduler and the user's Done tap can race to summarize the same
+        # entry; one lock plus a state re-check makes that harmless.
+        self._lock = asyncio.Lock()
 
     # -- helpers ----------------------------------------------------------
 
@@ -264,7 +268,14 @@ class JournalService:
         if entry is None:
             await self._say(user_id, "No open entry. Send /now to start one.")
             return
-        await self._finalize(entry, now, explicit=True)
+        await self._finalize_locked(entry.id, now, explicit=True)
+
+    async def _finalize_locked(self, entry_id: int, now: datetime, explicit: bool) -> None:
+        async with self._lock:
+            entry = self.store.get_entry_by_id(entry_id)
+            if entry is None or entry.state not in ("prompted", "collecting"):
+                return  # someone else already finished it
+            await self._finalize(entry, now, explicit)
 
     async def _finalize(self, entry: Entry, now: datetime, explicit: bool) -> None:
         user_id = entry.user_id
@@ -487,6 +498,10 @@ class JournalService:
         await self._say(user_id, "Done. Nothing was waiting to be retried." if n == 0 else f"Retried {n} item(s).")
 
     async def _retry_failed(self, user_id: int, now: datetime) -> int:
+        async with self._lock:
+            return await self._retry_failed_unlocked(user_id, now)
+
+    async def _retry_failed_unlocked(self, user_id: int, now: datetime) -> int:
         n = 0
         for entry in self.store.failed_entries(user_id):
             n += 1
@@ -540,7 +555,7 @@ class JournalService:
     async def _tick_sessions(self, user: User, now: datetime) -> None:
         for entry in self.store.open_entries(user.telegram_id):
             if entry.state == "collecting" and entry.last_message_at and now - entry.last_message_at >= IDLE_FINALIZE:
-                await self._finalize(entry, now, explicit=False)
+                await self._finalize_locked(entry.id, now, explicit=False)
             elif entry.state == "prompted" and entry.prompted_at and now - entry.prompted_at >= NO_REPLY_EXPIRY:
                 if entry.origin == "nightly":
                     self.store.set_state(entry.id, "skipped")

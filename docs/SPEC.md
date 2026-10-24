@@ -284,16 +284,22 @@ Rules:
 
 ```
 users(telegram_id PK, timezone DEFAULT 'Asia/Jakarta',
-      prompt_time DEFAULT '20:00', paused, created_at)
+      prompt_time DEFAULT '20:00', paused, language, created_at)
+      -- language = last detected journal language, used to pick the prompt text
 
-entries(id PK, user_id FK, local_date, state, prompted_at, last_message_at,
-        finished_at, summary_status, UNIQUE(user_id, local_date))
+entries(id PK, user_id FK, local_date, state, origin 'nightly'|'manual',
+        prompted_at, last_message_at, finished_at, summary_status,
+        UNIQUE(user_id, local_date))
+      -- origin: an unused manual session is deleted on expiry so it can't
+      -- block tonight's prompt; an unanswered nightly one becomes 'skipped'
 
 messages(id PK, entry_id FK ON DELETE CASCADE,
          source CHECK IN ('text','voice'), text, sent_at)
 
 summaries(entry_id PK FK ON DELETE CASCADE,
-          grateful JSON, mistakes JSON, learned JSON, model, created_at)
+          grateful JSON, mistakes JSON, learned JSON,
+          empty_note, language, model, created_at)
+      -- empty_note = the "nothing mentioned" phrase in the user's language
 
 weekly_recaps(id PK, user_id FK, week_start, format_name, content JSON,
               status CHECK IN ('ok','stale','failed'), created_at,

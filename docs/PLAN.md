@@ -3,6 +3,21 @@
 Companion to [SPEC.md](./SPEC.md). Each milestone ends in something runnable and
 testable, so problems surface early instead of at the end.
 
+## Status
+
+| Milestone | Status |
+|---|---|
+| M0 Scaffold | done |
+| M1 Storage and time logic | done |
+| M2 Summarizer and formatter | done (`scripts/try_summary.py` for prompt tuning) |
+| M3 Bot loop (text) | done |
+| M4 Voice notes | **deferred to phase 2** |
+| M5 Scheduling | done |
+| M6 Export and backups | done |
+| M7 Weekly Wrapped | done |
+| M8 Monthly Review | done |
+| M9 Deploy | Dockerfile + README done; **real-Telegram smoke test is the user's step** (README checklist), because the build sandbox cannot reach api.telegram.org |
+
 ## Proposed layout
 
 ```
