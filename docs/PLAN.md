@@ -166,6 +166,22 @@ appear in source files, git history, or screenshots of the repo.
 | Hosting (always on) | An old PC/Raspberry Pi at home, or a provider's free-forever VM tier if one is available to you | Free tiers change and often need a card for sign-up; verify before relying on one |
 | AI summaries (production) | Anthropic Haiku | Not free, but one short entry a day plus a weekly and monthly call should be well under a dollar a month (estimate; check current pricing) |
 
+### Model recommendation
+
+| Stage | Provider | Why |
+|---|---|---|
+| Tuning prompts on **sample** journals | **Groq free tier** (`LLM_PROVIDER=groq`) | No card needed; reported ~30 requests/min and ~1,000/day per model, far more than one user needs. Pick a current Llama- or gpt-oss-class model from their console (names change, so `SUMMARY_MODEL` has no default). |
+| Real journal, cheapest and best | **Claude Haiku 5.5** (the default) | Best fit for mirroring casual Indonesian/English tone. Reported price $0.10 / $0.50 per million input/output tokens (prompts under 100k tokens). One entry is roughly 2k tokens in and 300 out, so about **1 cent per month** for daily summaries. |
+| Weekly and monthly | Same Haiku via `NARRATIVE_MODEL=claude-haiku-5-5` | They run rarely, so even a pricier model would be cheap, but start with Haiku and only upgrade if the writing feels flat. |
+| Fully private and free | `ollama` on your own computer | Nothing leaves your machine, but small local models are noticeably worse at Indonesian slang and at not inventing details. |
+
+Avoid for real entries: **Gemini's free tier**. Sources report that free-tier
+content may be used to improve Google's products, which is the wrong trade for
+a private journal. Paid usage reportedly is not.
+
+Numbers above come from third-party price trackers, not the official pages.
+Confirm on each provider's pricing/limits page before relying on them.
+
 Recommended path: build with fakes, tune prompts with a free provider on
 sample journals, run on your laptop to try it for real, and only then decide
 whether to pay for a better model or an always-on host.
