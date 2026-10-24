@@ -221,12 +221,16 @@ class JournalService:
         self._user(user_id, now)
         entry = self._open_entry(user_id)
         if entry is None:
-            self.store.kv_set(f"pending:{user_id}", text)
-            await self._say(
-                user_id,
-                "I'm not collecting an entry right now. Want to journal now? I'll keep what you just wrote.",
-                [[("Journal now 📓", "now")]],
-            )
+            # Append rather than overwrite: if the bot was offline, Telegram
+            # delivers everything you sent in a burst, and none of it may be lost.
+            earlier = self.store.kv_get(f"pending:{user_id}") or ""
+            self.store.kv_set(f"pending:{user_id}", f"{earlier}\n\n{text}".strip())
+            if not earlier:  # one offer, not one per queued message
+                await self._say(
+                    user_id,
+                    "I'm not collecting an entry right now. Want to journal now? I'll keep what you just wrote.",
+                    [[("Journal now 📓", "now")]],
+                )
             return False
         self.store.add_message(entry.id, text, "text", now)
         return True

@@ -409,3 +409,15 @@ async def test_backup_count_is_configurable(tmp_path):
     for i in range(6):
         await svc.tick(EVENING + timedelta(days=i))
     assert len(list(tmp_path.glob("journal-*.db"))) == 3
+
+
+async def test_messages_sent_while_offline_are_all_kept_with_one_offer():
+    svc, store, m, clock = make(GOOD_DAILY)
+    for t in ("first thought", "second thought", "third thought"):
+        assert not await svc.add_text(UID, t)
+    assert sum("Want to journal now" in x for x in m.texts) == 1
+    await svc.start_session(UID)  # what the "Journal now" button does
+    entry = store.get_entry(UID, "2026-10-24")
+    assert [x.text for x in store.messages(entry.id)] == ["first thought\n\nsecond thought\n\nthird thought"]
+    # and the parked text is cleared, so it can't leak into a later session
+    assert not store.kv_get(f"pending:{UID}")
