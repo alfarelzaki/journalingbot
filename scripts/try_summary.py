@@ -36,16 +36,19 @@ async def main(paths: list[Path]) -> int:
         print(exc, file=sys.stderr)
         return 1
     summarizer = Summarizer(build_client(config), config.summary_model, config.narrative_model)
+    failures = 0
     for path in paths:
         print(f"\n=== {path} ===")
         try:
             summary = await summarizer.summarize_day([path.read_text(encoding="utf-8")], [])
         except SummaryError as exc:
             print(f"FAILED: {exc}")
+            failures += 1
             continue
         print("\n".join(render_daily(MdFmt(), date.today(), summary)))
         print(f"(language: {summary.language}, empty note: {summary.empty_note!r})")
-    return 0
+    # A non-zero exit lets callers (like scripts/install-mac.sh) detect a bad key or model name.
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
