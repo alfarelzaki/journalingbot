@@ -76,7 +76,8 @@ async def test_full_flow_manual_session():
     assert await svc.add_text(UID, "belajar pasang alarm jauh")
     await svc.finish(UID)
 
-    summary = m.last
+    summary = m.texts[-2]  # the refinement prompt follows the summary
+    assert m.sent[-1][2] == [[("✅ Sudah pas", "ok")]]
     assert summary.index("Grateful") < summary.index("Mistakes") < summary.index("What I learned")
     assert "Aku telat bangun" in summary
     entry = store.get_entry(UID, "2026-10-24")

@@ -123,6 +123,11 @@ How it behaves, and why:
   summarizes automatically, so falling asleep mid-entry loses nothing.
 - **No reply:** one prompt a night, never nagging; unanswered after 4 hours the
   day is marked skipped.
+- **Correct the summary:** after each summary the bot asks if anything is off.
+  Just tell it, for example what your real mistake was or what you're actually
+  grateful for, and it rewrites the summary and shows it again. Repeat until it
+  fits, then tap ✅ (or say "ok"). It only changes what you ask, and asks a
+  question rather than guessing. The chat closes by itself after an hour.
 - **If the AI is down:** your raw text is saved first, the bot tells you, and
   it retries every 30 minutes (or `/retry`).
 - **Edits:** deleting or re-summarizing a day marks the covering weekly/monthly

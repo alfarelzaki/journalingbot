@@ -51,8 +51,10 @@ def build_export(store: Store, user_id: int, include_raw: bool = False, month: s
             writer.writerow(
                 [entry.local_date] + [_csv_safe(" | ".join(getattr(summary, k))) for k in ("grateful", "mistakes", "learned")]
             )
+        clarifications = [t for role, t in store.refinements(entry.id) if role == "user"]
         if include_raw:
             record["messages"] = [{"source": m.source, "text": m.text, "sent_at": m.sent_at.isoformat()} for m in msgs]
+            record["clarifications"] = clarifications
         entries_json.append(record)
         if not summary and not (include_raw and msgs):
             continue
@@ -72,6 +74,8 @@ def build_export(store: Store, user_id: int, include_raw: bool = False, month: s
         body = "\n\n".join(render_daily(fmt, d, summary)) if summary else "# " + entry.local_date + "\n\n*(not summarized)*"
         if include_raw and msgs:
             body += "\n\n## Raw notes\n\n" + "\n\n".join(m.text for m in msgs)
+            if clarifications:
+                body += "\n\n## Clarifications\n\n" + "\n".join(f"- {c}" for c in clarifications)
         path = f"daily/{d.year:04d}/{d.month:02d}/{entry.local_date}.md"
         files[path] = "\n".join(front) + body + "\n"
         daily_links.append(f"- [{entry.local_date}]({path})")

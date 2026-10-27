@@ -80,6 +80,18 @@ MIGRATIONS = [
     );
     CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);
     """,
+    # 2: the chat after a summary, where the user corrects it. Kept separately
+    # from `messages` so corrections never look like new journal text, but they
+    # are fed back in if the day is ever re-summarized.
+    """
+    CREATE TABLE refinements(
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        entry_id   INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+        role       TEXT NOT NULL CHECK(role IN ('user','bot')),
+        text       TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    """,
 ]
 
 _USER_FIELDS = {"timezone", "prompt_time", "paused", "language"}
@@ -264,6 +276,20 @@ class Store:
         )
         self.conn.commit()
         return cur.rowcount > 0
+
+    def add_refinement(self, entry_id: int, role: str, text: str, now: datetime) -> None:
+        self.conn.execute(
+            "INSERT INTO refinements(entry_id, role, text, created_at) VALUES (?,?,?,?)",
+            (entry_id, role, text, to_iso(now)),
+        )
+        self.conn.commit()
+
+    def refinements(self, entry_id: int) -> list[tuple[str, str]]:
+        """(role, text) pairs in order; role is 'user' or 'bot'."""
+        rows = self.conn.execute(
+            "SELECT role, text FROM refinements WHERE entry_id=? ORDER BY id", (entry_id,)
+        )
+        return [(r["role"], r["text"]) for r in rows]
 
     def recent_texts(self, user_id: int, before_date: str, limit: int) -> list[str]:
         """Most recent past messages, used only as a writing-style sample."""

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import json
 import logging
 from collections.abc import Callable
 from datetime import date, datetime, time, timedelta
@@ -23,6 +24,7 @@ from journalbot.models import Entry, User
 from journalbot.summarizer import Summarizer, SummaryError
 from journalbot.timeutil import (
     UTC,
+    from_iso,
     get_zone,
     is_due,
     local_date,
@@ -31,6 +33,7 @@ from journalbot.timeutil import (
     parse_hhmm,
     previous_month_key,
     previous_week,
+    to_iso,
     utcnow,
 )
 
@@ -44,6 +47,31 @@ NO_REPLY_EXPIRY = timedelta(hours=4)  # unanswered prompt -> skipped
 RECAP_TIME = time(8, 0)
 RETRY_EVERY_MINUTES = 30
 DEFAULT_BACKUPS_KEPT = 14
+REFINE_IDLE = timedelta(minutes=60)  # the correction chat closes itself after this much silence
+
+# Shown after a summary. Language follows the person's last journal language.
+REFINE_TEXT = {
+    "id": {
+        "ask": "Ada yang kurang pas? Bilang aja, misalnya apa sebenarnya kesalahanmu atau apa yang kamu syukuri, nanti kuperbaiki. Tekan ✅ kalau sudah pas.",
+        "ok": "✅ Sudah pas",
+        "saved": "Oke, tersimpan. Istirahat yang cukup ya 🌙",
+        "already": "Ringkasan itu sudah tersimpan. ✅",
+        "failed": "Maaf, belum bisa kuterapkan sekarang. Coba lagi, atau tekan ✅ untuk menyimpan ringkasan apa adanya.",
+    },
+    "en": {
+        "ask": "Anything that's off? Tell me, for example what your real mistake was or what you're actually grateful for, and I'll rewrite it. Tap ✅ when it's right.",
+        "ok": "✅ Looks good",
+        "saved": "Saved. Rest well 🌙",
+        "already": "That summary is already saved. ✅",
+        "failed": "Sorry, I couldn't apply that just now. Try again, or tap ✅ to keep the summary as it is.",
+    },
+}
+# A plain "ok" ends the correction chat without spending an AI call on it.
+AFFIRMATIONS = {
+    "ok", "oke", "okay", "okey", "sip", "siap", "good", "fine", "great", "nice", "thanks", "thank you",
+    "thx", "makasih", "terima kasih", "mantap", "udah", "sudah", "udah pas", "sudah pas", "cukup",
+    "looks good", "sudah cukup", "udah cukup", "👍", "✅", "👌",
+}
 
 PROMPTS = {
     "id": "🌙 Check-in malam. Hari ini ngapain aja? Tulis sebebas dan sepanjang yang kamu mau, boleh dikirim beberapa pesan. Tekan Selesai kalau sudah.",
@@ -70,7 +98,10 @@ HELP = """\
 /retry — retry failed summaries
 /time <i>HH:MM</i> — nightly prompt time
 /timezone <i>Area/City</i> — e.g. Asia/Jakarta
-/pause · /resume — stop / restart nightly prompts"""
+/pause · /resume — stop / restart nightly prompts
+
+<b>After a summary</b>
+Just tell me what to change (what your real mistake was, what you're grateful for…) and I'll rewrite it. Tap ✅ or say "ok" when it's right."""
 
 
 class Messenger(Protocol):
@@ -120,9 +151,11 @@ class JournalService:
     async def _say(self, user_id: int, text: str, buttons: Buttons | None = None) -> None:
         await self.messenger.send(user_id, text, buttons)
 
-    async def _say_blocks(self, user_id: int, blocks: list[str]) -> None:
-        for part in split_blocks(blocks):
-            await self.messenger.send(user_id, part)
+    async def _say_blocks(self, user_id: int, blocks: list[str], buttons: Buttons | None = None) -> None:
+        parts = split_blocks(blocks)
+        for i, part in enumerate(parts):
+            # Buttons go on the last part only, so they sit under the whole message.
+            await self.messenger.send(user_id, part, buttons if i == len(parts) - 1 else None)
 
     def _user(self, user_id: int, now: datetime) -> User:
         return self.store.ensure_user(user_id, now)
@@ -147,7 +180,8 @@ class JournalService:
             "Hi! I'm your journaling bot. 🌙\n\n"
             f"Every night at <b>{esc(user.prompt_time)}</b> ({esc(user.timezone)}) I'll ask what you did today. "
             "Reply in as many messages as you like, then tap Done and I'll sum it up as "
-            "<b>Grateful → Mistakes → Learned</b>, in your own words.\n\n"
+            "<b>Grateful → Mistakes → Learned</b>, in your own words. Then you can tell me what's off "
+            "and I'll fix the summary until it fits.\n\n"
             "Every Monday you get a fun Weekly Wrapped, and on the 1st a Month in Review.\n\n"
             f"Privacy: your text is sent to {esc(self.provider_name)} to write the summaries, "
             "and Telegram bot chats are not end-to-end encrypted.\n\n"
@@ -193,6 +227,7 @@ class JournalService:
     async def start_session(self, user_id: int, now: datetime | None = None) -> None:
         now = now or self.clock()
         user = self._user(user_id, now)
+        self._refine_clear(user_id)  # a new entry ends any open correction chat
         today = self._today(user, now).isoformat()
         entry = self.store.get_entry(user_id, today)
         if entry is None:
@@ -215,12 +250,21 @@ class JournalService:
             self.store.kv_set(f"pending:{user_id}", "")
 
     async def add_text(self, user_id: int, text: str, now: datetime | None = None) -> bool:
-        """Append a message to the open entry. Returns False if none is open
-        (the text is parked so the 'Journal now' button doesn't lose it)."""
+        """Route a text message. Returns True if it was used: appended to the open
+        entry, or applied as a correction to the summary just shown. Returns False
+        if nothing is open (the text is parked so the 'Journal now' button
+        doesn't lose it)."""
         now = now or self.clock()
         self._user(user_id, now)
         entry = self._open_entry(user_id)
         if entry is None:
+            session = self._refine_session(user_id, now)
+            if session is not None:
+                if text.strip().lower().strip(" .!,") in AFFIRMATIONS:
+                    await self.accept_summary(user_id, now)
+                else:
+                    await self._refine(user_id, text, now, session)
+                return True
             # Append rather than overwrite: if the bot was offline, Telegram
             # delivers everything you sent in a burst, and none of it may be lost.
             earlier = self.store.kv_get(f"pending:{user_id}") or ""
@@ -304,11 +348,11 @@ class JournalService:
     async def _summarize(self, entry: Entry, now: datetime, announce_failure: bool, late: bool = False) -> bool:
         user_id = entry.user_id
         texts = [m.text for m in self.store.messages(entry.id)]
-        samples = [
-            t for t in self.store.recent_texts(user_id, entry.local_date, 10) if len(t.strip()) >= 20
-        ][: self.style_samples]
+        samples = self._style_samples(user_id, entry.local_date)
+        # Corrections made in an earlier chat must survive a re-summary.
+        clarifications = [t for role, t in self.store.refinements(entry.id) if role == "user"]
         try:
-            summary = await self.summarizer.summarize_day(texts, samples)
+            summary = await self.summarizer.summarize_day(texts, samples, clarifications)
         except SummaryError as exc:
             log.error("summary failed for entry %s: %s", entry.id, type(exc).__name__)
             self.store.set_summary_status(entry.id, "failed")
@@ -327,7 +371,88 @@ class JournalService:
         if late:
             blocks.insert(0, "Here's the summary I couldn't finish earlier:")
         await self._say_blocks(user_id, blocks)
+        if not late:  # a summary that arrives hours later is not a live conversation
+            await self._offer_refine(entry, summary.language, now)
         return True
+
+    def _style_samples(self, user_id: int, local_date: str) -> list[str]:
+        return [
+            t for t in self.store.recent_texts(user_id, local_date, 10) if len(t.strip()) >= 20
+        ][: self.style_samples]
+
+    # -- correcting the summary -------------------------------------------
+
+    def _refine_set(self, user_id: int, entry_id: int, now: datetime) -> None:
+        self.store.kv_set(f"refine:{user_id}", json.dumps({"entry_id": entry_id, "at": to_iso(now)}))
+
+    def _refine_clear(self, user_id: int) -> None:
+        if self.store.kv_get(f"refine:{user_id}"):
+            self.store.kv_set(f"refine:{user_id}", "")
+
+    def _refine_session(self, user_id: int, now: datetime) -> dict | None:
+        """The open correction chat, or None. A chat idle for REFINE_IDLE closes
+        itself, so a stray message the next morning is not treated as a correction."""
+        raw = self.store.kv_get(f"refine:{user_id}")
+        if not raw:
+            return None
+        try:
+            data = json.loads(raw)
+            session = {"entry_id": int(data["entry_id"]), "at": from_iso(data["at"])}
+        except (ValueError, KeyError, TypeError):
+            self._refine_clear(user_id)
+            return None
+        if now - session["at"] >= REFINE_IDLE:
+            self._refine_clear(user_id)
+            return None
+        return session
+
+    async def _offer_refine(self, entry: Entry, lang: str, now: datetime) -> None:
+        self._refine_set(entry.user_id, entry.id, now)
+        t = REFINE_TEXT.get(lang, REFINE_TEXT["en"])
+        await self._say(entry.user_id, t["ask"], [[(t["ok"], "ok")]])
+
+    async def accept_summary(self, user_id: int, now: datetime | None = None) -> None:
+        now = now or self.clock()
+        user = self._user(user_id, now)
+        had_session = self._refine_session(user_id, now) is not None
+        self._refine_clear(user_id)
+        t = REFINE_TEXT.get(user.language, REFINE_TEXT["en"])
+        await self._say(user_id, t["saved"] if had_session else t["already"])
+
+    async def _refine(self, user_id: int, text: str, now: datetime, session: dict) -> None:
+        async with self._lock:
+            user = self._user(user_id, now)
+            t = REFINE_TEXT.get(user.language, REFINE_TEXT["en"])
+            buttons = [[(t["ok"], "ok")]]
+            entry = self.store.get_entry_by_id(session["entry_id"])
+            current = self.store.get_summary(entry.id) if entry else None
+            if entry is None or current is None:
+                self._refine_clear(user_id)
+                await self._say(user_id, "That entry is no longer available, so there is nothing to adjust.")
+                return
+            history = self.store.refinements(entry.id)[-10:]
+            texts = [m.text for m in self.store.messages(entry.id)]
+            try:
+                reply, updated = await self.summarizer.refine_day(
+                    texts, history, current, text, self._style_samples(user_id, entry.local_date)
+                )
+            except SummaryError as exc:
+                log.error("refinement failed for entry %s: %s", entry.id, type(exc).__name__)
+                await self._say(user_id, t["failed"], buttons)  # the chat stays open for another try
+                return
+            self.store.add_refinement(entry.id, "user", text, now)
+            self.store.add_refinement(entry.id, "bot", reply, now)
+            changed = (updated.grateful, updated.mistakes, updated.learned) != (
+                current.grateful, current.mistakes, current.learned,
+            )
+            if changed:  # a question from the bot must not rewrite anything or stale the recaps
+                self.store.save_summary(entry.id, updated, now)
+                self.store.update_user(user_id, language=updated.language)
+            self._refine_set(user_id, entry.id, now)
+            blocks = [esc(reply)]
+            if changed:
+                blocks += render_daily(self.fmt, date.fromisoformat(entry.local_date), updated)
+            await self._say_blocks(user_id, blocks, buttons)
 
     # -- viewing ----------------------------------------------------------
 
@@ -532,7 +657,7 @@ class JournalService:
         for user in self.store.list_users():
             if user.paused:
                 continue
-            for job in (self._tick_prompt, self._tick_sessions, self._tick_weekly, self._tick_monthly, self._tick_retries):
+            for job in (self._tick_prompt, self._tick_sessions, self._tick_refine, self._tick_weekly, self._tick_monthly, self._tick_retries):
                 try:
                     await job(user, now)
                 except Exception as exc:  # one failing job must not stop the others
@@ -567,6 +692,9 @@ class JournalService:
                     self.store.set_state(entry.id, "skipped")
                 else:  # a manual session nobody wrote in must not block tonight's prompt
                     self.store.delete_entry(entry.user_id, entry.local_date)
+
+    async def _tick_refine(self, user: User, now: datetime) -> None:
+        self._refine_session(user.telegram_id, now)  # closes it if idle
 
     def _recap_due(self, user: User, now: datetime) -> tuple[bool, date]:
         local = local_now(now, _zone(user))

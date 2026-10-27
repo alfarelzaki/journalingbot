@@ -199,6 +199,8 @@ def build_application(config: Config, service_factory: Callable[[TelegramMesseng
             await service.finish(user_id)
         elif data == "skip":
             await service.skip(user_id)
+        elif data == "ok":
+            await service.accept_summary(user_id)
         elif data == "now":
             await service.start_session(user_id)
         elif data.startswith("del:"):

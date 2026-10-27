@@ -55,3 +55,24 @@ def test_application_builds_with_all_handlers():
     names = {c for h in handlers for c in getattr(h, "commands", [])}
     assert {"start", "now", "done", "export", "week", "month", "delete", "time", "timezone"} <= names
     assert "service" in app.bot_data
+
+
+async def test_ok_button_calls_accept_summary_and_strangers_are_ignored():
+    from telegram.ext import CallbackQueryHandler
+
+    svc = SimpleNamespace(messenger=None, accept_summary=AsyncMock())
+    app = build_application(CFG, lambda messenger: svc)
+    handler = next(h for g in app.handlers.values() for h in g if isinstance(h, CallbackQueryHandler))
+
+    def press(user_id):
+        query = SimpleNamespace(data="ok", answer=AsyncMock(), edit_message_reply_markup=AsyncMock())
+        return SimpleNamespace(
+            effective_user=SimpleNamespace(id=user_id),
+            effective_chat=SimpleNamespace(type="private"),
+            callback_query=query,
+        )
+
+    await handler.callback(press(8), None)  # not on the allowlist
+    svc.accept_summary.assert_not_awaited()
+    await handler.callback(press(7), None)
+    svc.accept_summary.assert_awaited_once_with(7)

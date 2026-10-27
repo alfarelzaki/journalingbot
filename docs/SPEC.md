@@ -94,6 +94,25 @@ States per user per day: `IDLE → PROMPTED → COLLECTING → SUMMARIZED`
    *Why 4 hours, not 2:* you journal later in the evening than the v1 default
    assumed; midnight is also a natural day boundary.
    *Why no repeated reminders:* a habit tool that pesters gets muted.
+5b. **Fine-tune the summary (correction chat).** After every live summary the bot
+   asks whether anything is off and keeps listening. Anything you type is treated
+   as a correction ("my real mistake was skipping breakfast, not being late",
+   "I'm actually grateful for my friend's call"), and the bot rewrites the
+   summary and shows it again, repeating until you tap **✅ Looks good** or say
+   "ok". It ends by itself after 60 minutes of silence, or when you start a new
+   entry with `/now`.
+   *Why:* the first summary is a guess from rough notes; you are the authority on
+   what your day meant. The chat is the fast way to make it right.
+   Rules:
+   - You are the authority: your corrections override the original notes.
+   - Only what you ask changes; every other bullet stays exactly as it was.
+   - The bot never guesses: if a request is unclear it asks one short question and
+     changes nothing.
+   - Corrections are stored (table `refinements`) and are fed back in if the day
+     is ever re-summarized, so they are not lost.
+   - A summary delivered late by a retry does not open a chat.
+   - A plain "ok", "sip", "makasih", 👍 or ✅ closes the chat without spending an
+     AI call.
 6. **Messages outside a session** (e.g. at 3pm) offer a button to start an early
    session for today rather than being discarded.
 7. **One entry per local day.** A second session on the same day appends to the
