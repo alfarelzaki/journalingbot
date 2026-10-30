@@ -422,3 +422,33 @@ async def test_messages_sent_while_offline_are_all_kept_with_one_offer():
     assert [x.text for x in store.messages(entry.id)] == ["first thought\n\nsecond thought\n\nthird thought"]
     # and the parked text is cleared, so it can't leak into a later session
     assert not store.kv_get(f"pending:{UID}")
+
+
+# -- writing a missed day --------------------------------------------------
+
+async def test_yesterday_files_the_entry_under_yesterdays_date():
+    svc, store, m, clock = make(GOOD_DAILY)
+    await svc.start_session(UID, yesterday=True)
+    assert "Sat 24 Oct" not in m.last and "Fri 23 Oct 2026" in m.last
+    await svc.add_text(UID, "bangun telat tapi ibu sehat")
+    await svc.finish(UID)
+    assert store.get_entry(UID, "2026-10-23").summary_status == "ok"
+    assert store.get_entry(UID, "2026-10-24") is None
+
+
+async def test_yesterday_drops_an_unused_manual_entry_for_today():
+    svc, store, m, clock = make(GOOD_DAILY)
+    await svc.start_session(UID)  # /now, never written in
+    await svc.start_session(UID, yesterday=True)
+    assert store.get_entry(UID, "2026-10-24") is None
+    await svc.add_text(UID, "something")
+    assert [e.local_date for e in store.open_entries(UID)] == ["2026-10-23"]
+
+
+async def test_yesterday_refuses_while_today_has_text():
+    svc, store, m, clock = make(GOOD_DAILY)
+    await svc.start_session(UID)
+    await svc.add_text(UID, "today's thoughts")
+    await svc.start_session(UID, yesterday=True)
+    assert "Finish or skip" in m.last
+    assert store.get_entry(UID, "2026-10-23") is None

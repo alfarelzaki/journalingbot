@@ -109,6 +109,7 @@ ordinary journal text.
 | Command | What it does |
 |---|---|
 | `/now` · `/done` · `/skip` | Start / finish / skip today's entry |
+| `/yesterday` | Write a missed entry for yesterday (finish or skip any open entry first) |
 | `/undo` · `/fix <text>` | Remove / replace your last message |
 | `/today` · `/history [n]` | Show today's / the last n summaries |
 | `/week` · `/month` (+ `redo`) | Show or regenerate the latest weekly / monthly recap |

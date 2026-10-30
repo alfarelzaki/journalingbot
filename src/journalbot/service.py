@@ -19,7 +19,7 @@ from typing import Protocol
 from journalbot import recaps
 from journalbot.db import Store
 from journalbot.exporter import build_export
-from journalbot.formatting import HtmlFmt, render_daily, split_blocks
+from journalbot.formatting import HtmlFmt, nice_date, render_daily, split_blocks
 from journalbot.models import Entry, User
 from journalbot.summarizer import Summarizer, SummaryError
 from journalbot.timeutil import (
@@ -77,6 +77,10 @@ PROMPTS = {
     "id": "🌙 Check-in malam. Hari ini ngapain aja? Tulis sebebas dan sepanjang yang kamu mau, boleh dikirim beberapa pesan. Tekan Selesai kalau sudah.",
     "en": "🌙 Evening check-in. What did you do today? Write as much or as little as you like, in as many messages as you want. Tap Done when you're finished.",
 }
+BACKFILL_PROMPTS = {
+    "id": "📓 Catatan untuk <b>{day}</b>. Hari itu ngapain aja? Tulis sebebas yang kamu mau, boleh beberapa pesan. Tekan Selesai kalau sudah.",
+    "en": "📓 Journal for <b>{day}</b>. What did you do that day? Write as much as you like, in as many messages as you want. Tap Done when you're finished.",
+}
 LABELS = {
     "id": {"done": "Selesai ✅", "skip": "Lewati hari ini"},
     "en": {"done": "Done ✅", "skip": "Skip today"},
@@ -85,6 +89,7 @@ LABELS = {
 HELP = """\
 <b>Commands</b>
 /now — start a journal entry now
+/yesterday — write yesterday's entry
 /done — finish and summarize
 /skip — skip today
 /undo — remove your last message
@@ -224,14 +229,25 @@ class JournalService:
 
     # -- sessions ---------------------------------------------------------
 
-    async def start_session(self, user_id: int, now: datetime | None = None) -> None:
+    async def start_session(self, user_id: int, now: datetime | None = None, *, yesterday: bool = False) -> None:
         now = now or self.clock()
         user = self._user(user_id, now)
+        day = self._today(user, now) - timedelta(days=1 if yesterday else 0)
+        if yesterday:
+            # Messages go to the newest open entry, so a second one open at the
+            # same time would swallow the text meant for yesterday.
+            for other in self.store.open_entries(user_id):
+                if other.local_date == day.isoformat():
+                    continue
+                if other.origin == "manual" and not self.store.messages(other.id):
+                    self.store.delete_entry(user_id, other.local_date)  # an unused /now
+                else:
+                    await self._say(user_id, "Finish or skip the open entry first (/done or /skip), then send /yesterday.")
+                    return
         self._refine_clear(user_id)  # a new entry ends any open correction chat
-        today = self._today(user, now).isoformat()
-        entry = self.store.get_entry(user_id, today)
+        entry = self.store.get_entry(user_id, day.isoformat())
         if entry is None:
-            self.store.create_entry(user_id, today, "prompted", "manual", now)
+            self.store.create_entry(user_id, day.isoformat(), "prompted", "manual", now)
         elif entry.state in ("prompted", "collecting"):
             await self._say(user_id, "An entry is already open. Just keep writing, and tap Done when you're finished.")
             return
@@ -239,7 +255,11 @@ class JournalService:
             self.store.reopen_entry(entry.id, now)
         else:  # skipped
             self.store.reprompt_entry(entry.id, now)
-        await self._say(user_id, PROMPTS.get(user.language, PROMPTS["en"]), self._prompt_buttons(user.language))
+        if yesterday:
+            prompt = BACKFILL_PROMPTS.get(user.language, BACKFILL_PROMPTS["en"]).format(day=esc(nice_date(day)))
+        else:
+            prompt = PROMPTS.get(user.language, PROMPTS["en"])
+        await self._say(user_id, prompt, self._prompt_buttons(user.language))
         await self._flush_pending(user_id, now)
 
     async def _flush_pending(self, user_id: int, now: datetime) -> None:

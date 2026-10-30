@@ -31,6 +31,7 @@ log = logging.getLogger(__name__)
 
 COMMANDS = [
     ("now", "Start a journal entry now"),
+    ("yesterday", "Write yesterday's entry"),
     ("done", "Finish and summarize"),
     ("skip", "Skip today"),
     ("today", "Today's summary"),
@@ -130,6 +131,9 @@ def build_application(config: Config, service_factory: Callable[[TelegramMesseng
     async def now(update, context):
         await service.start_session(uid(update))
 
+    async def yesterday(update, context):
+        await service.start_session(uid(update), yesterday=True)
+
     async def done(update, context):
         await service.finish(uid(update))
 
@@ -213,7 +217,7 @@ def build_application(config: Config, service_factory: Callable[[TelegramMesseng
         log.error("handler error: %s", type(context.error).__name__)
 
     commands: dict[str, Handler] = {
-        "start": start, "help": help_, "now": now, "done": done, "skip": skip, "undo": undo,
+        "start": start, "help": help_, "now": now, "yesterday": yesterday, "done": done, "skip": skip, "undo": undo,
         "fix": fix, "today": today, "history": history, "week": week, "month": month,
         "export": export, "retry": retry, "delete": delete, "time": set_time,
         "timezone": set_timezone, "pause": pause, "resume": resume,
